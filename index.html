@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traffic Filter - Smartlink Monetization</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .container {
+            background: white;
+            border-radius: 15px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .filter-status {
+            background: #f7f7f7;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .status-item {
+            display: flex;
+            align-items: center;
+            margin: 15px 0;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        .status-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            margin-right: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        .pending .status-icon {
+            background: #ffd700;
+            color: #856404;
+        }
+        .success .status-icon {
+            background: #4CAF50;
+            color: white;
+        }
+        .status-text {
+            flex: 1;
+            font-size: 14px;
+            color: #666;
+        }
+        .button {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+            text-decoration: none;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: transform 0.2s;
+        }
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102,126,234,0.4);
+        }
+        .button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .info {
+            text-align: center;
+            margin-top: 20px;
+            color: #999;
+            font-size: 12px;
+        }
+        .debug-info {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 12px;
+            margin-top: 20px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Smartlink Traffic Optimizer</h1>
+        
+        <div id="filterContainer" class="filter-status">
+            <div class="status-item pending" id="userAgentFilter">
+                <div class="status-icon">🤖</div>
+                <div class="status-text">Memeriksa User-Agent...</div>
+            </div>
+            <div class="status-item pending" id="geoFilter">
+                <div class="status-icon">🌍</div>
+                <div class="status-text">Memeriksa Lokasi...</div>
+            </div>
+            <div class="status-item pending" id="loaderFilter">
+                <div class="status-icon">⏳</div>
+                <div class="status-text">Menyiapkan Loader...</div>
+            </div>
+        </div>
+
+        <button class="button" id="redirectBtn" disabled>
+            <span id="btnText">Tunggu 3 detik...</span>
+        </button>
+
+        <div class="info">
+            ⚡ Traffic Filter v1.0 | Untuk Smartlink Adsterra
+        </div>
+
+        <div id="debugInfo" class="debug-info"></div>
+    </div>
+
+    <script>
+        // =============== KONFIGURASI ===============
+        const SMARTLINK_URL = "https://oversightexcitement.com/waj01tcu?key=dad6d89994c5673e298839c6d3cb0e9b"; // GANTI DENGAN URL ANDA
+        
+        // Daftar negara Tier-3 yang akan diblokir (CPM rendah)
+        const BLOCKED_COUNTRIES = ['IN', 'PK', 'ID', 'PH', 'NG', 'BD', 'VN', 'TH', 'EG', 'MA'];
+        
+        // Daftar User-Agent bot yang akan diblokir
+        const BOT_KEYWORDS = [
+            'bot', 'spider', 'crawler', 'python', 'perl', 'curl', 
+            'wget', 'scrapy', 'java', 'php', 'ubuntu', 'headless',
+            'selenium', 'phantomjs', 'puppeteer', 'googlebot',
+            'bingbot', 'yahoo! slurp', 'duckduckbot', 'baiduspider',
+            'yandexbot', 'facebookexternalhit', 'facebot', 'twitterbot'
+        ];
+        // ===========================================
+
+        // Fungsi untuk debug
+        function debug(message, data = null) {
+            const debugDiv = document.getElementById('debugInfo');
+            debugDiv.style.display = 'block';
+            const timestamp = new Date().toLocaleTimeString();
+            let logMessage = `[${timestamp}] ${message}`;
+            if (data) {
+                logMessage += `\nData: ${JSON.stringify(data, null, 2)}`;
+            }
+            debugDiv.innerHTML += logMessage + '<br>';
+            console.log(logMessage);
+        }
+
+        // Fungsi untuk update status filter
+        function updateFilterStatus(filterId, status, message) {
+            const element = document.getElementById(filterId);
+            element.className = `status-item ${status}`;
+            const statusText = element.querySelector('.status-text');
+            if (statusText) {
+                statusText.textContent = message;
+            }
+        }
+
+        // Fungsi untuk mendapatkan negara dari IP menggunakan ip-api.com
+        async function getCountryFromIP() {
+            try {
+                debug('Mencari lokasi IP...');
+                const response = await fetch('http://ip-api.com/json/?fields=status,countryCode,country,query');
+                const data = await response.json();
+                debug('Response IP-API:', data);
+                
+                if (data.status === 'success') {
+                    return {
+                        countryCode: data.countryCode,
+                        country: data.country,
+                        ip: data.query
+                    };
+                }
+                return null;
+            } catch (error) {
+                debug('Error getCountryFromIP:', error);
+                return null;
+            }
+        }
+
+        // Fungsi untuk memeriksa User-Agent
+        function checkUserAgent() {
+            const ua = navigator.userAgent.toLowerCase();
+            debug('User-Agent:', ua);
+            
+            // Cek apakah user-agent kosong atau terlalu pendek
+            if (!ua || ua.length < 10) {
+                updateFilterStatus('userAgentFilter', 'success', '⚠️ User-Agent tidak valid (terlalu pendek)');
+                return false;
+            }
+            
+            // Cek apakah mengandung kata kunci bot
+            for (let keyword of BOT_KEYWORDS) {
+                if (ua.includes(keyword.toLowerCase())) {
+                    updateFilterStatus('userAgentFilter', 'success', `❌ Terdeteksi sebagai bot (${keyword})`);
+                    return false;
+                }
+            }
+            
+            updateFilterStatus('userAgentFilter', 'success', '✅ User-Agent normal (manusia)');
+            return true;
+        }
+
+        // Fungsi untuk memeriksa negara
+        async function checkCountry() {
+            const geoData = await getCountryFromIP();
+            
+            if (!geoData) {
+                updateFilterStatus('geoFilter', 'success', '⚠️ Tidak bisa deteksi lokasi, diizinkan');
+                return true;
+            }
+            
+            debug('Data Geo:', geoData);
+            
+            if (BLOCKED_COUNTRIES.includes(geoData.countryCode)) {
+                updateFilterStatus('geoFilter', 'success', `❌ Negara diblokir: ${geoData.country} (${geoData.countryCode}) - CPM Rendah`);
+                return false;
+            } else {
+                updateFilterStatus('geoFilter', 'success', `✅ Negara diizinkan: ${geoData.country} (${geoData.countryCode})`);
+                return true;
+            }
+        }
+
+        // Fungsi countdown dan aktivasi tombol
+        function startCountdown(seconds) {
+            let countdown = seconds;
+            const btn = document.getElementById('redirectBtn');
+            const btnText = document.getElementById('btnText');
+            
+            updateFilterStatus('loaderFilter', 'success', `⏳ Loader aktif, tunggu ${countdown} detik...`);
+            
+            const interval = setInterval(() => {
+                countdown--;
+                if (countdown > 0) {
+                    btnText.textContent = `Tunggu ${countdown} detik...`;
+                    updateFilterStatus('loaderFilter', 'success', `⏳ Loader aktif, tunggu ${countdown} detik...`);
+                } else {
+                    clearInterval(interval);
+                    btnText.textContent = '🚀 Klik untuk Lanjut ke Smartlink';
+                    btn.disabled = false;
+                    updateFilterStatus('loaderFilter', 'success', '✅ Loader selesai, silakan klik tombol');
+                    
+                    // Tambahkan event listener untuk redirect
+                    btn.onclick = function(e) {
+                        e.preventDefault();
+                        debug('Tombol diklik, redirect ke smartlink');
+                        
+                        // Bersihkan referrer
+                        Object.defineProperty(document, 'referrer', {get : function(){ return ''; }});
+                        
+                        // Redirect dengan UTM tracking
+                        const utmUrl = SMARTLINK_URL.includes('?') 
+                            ? SMARTLINK_URL + '&utm_source=github_pages&utm_medium=iframe_traffic&utm_campaign=test_' + Date.now()
+                            : SMARTLINK_URL + '?utm_source=github_pages&utm_medium=iframe_traffic&utm_campaign=test_' + Date.now();
+                        
+                        window.location.href = utmUrl;
+                    };
+                }
+            }, 1000);
+        }
+
+        // Fungsi utama
+        async function init() {
+            debug('=== MEMULAI FILTER TRAFFIC ===');
+            
+            // 1. Cek User-Agent
+            const isHuman = checkUserAgent();
+            if (!isHuman) {
+                debug('❌ GAGAL: Terdeteksi sebagai bot');
+                updateFilterStatus('loaderFilter', 'success', '❌ Akses ditolak (bot terdeteksi)');
+                return;
+            }
+            
+            // 2. Cek Geo
+            const isAllowedCountry = await checkCountry();
+            if (!isAllowedCountry) {
+                debug('❌ GAGAL: Negara diblokir');
+                updateFilterStatus('loaderFilter', 'success', '❌ Akses ditolak (negara tidak diizinkan)');
+                return;
+            }
+            
+            // 3. Jika lolos semua, mulai countdown
+            debug('✅ LOLOS SEMUA FILTER, memulai countdown');
+            startCountdown(3);
+        }
+
+        // Mulai ketika halaman selesai dimuat
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
